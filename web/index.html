@@ -112,6 +112,7 @@
 				padding: 0;
 				resize: none;
 				pointer-events: none;
+				font-family: inherit;
 				font-size: 16px;
 			}
 			svg.i {
@@ -160,6 +161,50 @@
 			#tools.touch {
 				top: auto;
 				bottom: 12px;
+			}
+
+			/* Touch extras: trackpad mode and latched modifiers, above the toolbar. */
+			#pad-tools {
+				position: fixed;
+				right: 8px;
+				bottom: 64px;
+				z-index: 3;
+				display: none;
+				gap: 2px;
+				padding: 2px;
+				background: color-mix(in srgb, var(--surface-raised) 90%, transparent);
+				border: 1.5px solid var(--border-default);
+				border-radius: 12px;
+				backdrop-filter: blur(30px);
+				-webkit-backdrop-filter: blur(30px);
+			}
+			#tools.touch:not(.read-only) ~ #pad-tools {
+				display: flex;
+			}
+			#pad-tools button {
+				min-width: 40px;
+				height: 40px;
+				padding: 0 8px;
+				border: 0;
+				border-radius: 10px;
+				background: transparent;
+				font-family: inherit;
+				font-size: 16px;
+			}
+			#pad-tools button.on {
+				background: var(--border-default);
+				font-weight: 600;
+			}
+			#pad-cursor {
+				position: absolute;
+				width: 20px;
+				height: 26px;
+				pointer-events: none;
+				z-index: 2;
+				filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+			}
+			#pad-cursor[hidden] {
+				display: none;
 			}
 
 			/* Display picker: the app's Select, with a ghost trigger like the composer's pickers. */
@@ -737,7 +782,17 @@
 		</style>
 	</head>
 	<body>
-		<div id="surface" tabindex="0"><canvas id="screen"></canvas></div>
+		<div id="surface" tabindex="0">
+			<canvas id="screen"></canvas>
+			<svg id="pad-cursor" viewBox="0 0 20 26" hidden>
+				<path
+					d="M2 1v20l5-4.5 3.5 8 3-1.4-3.4-7.6H17z"
+					fill="#fff"
+					stroke="#000"
+					stroke-width="1.5"
+					stroke-linejoin="round" />
+			</svg>
+		</div>
 		<textarea
 			id="kbd"
 			autocomplete="off"
@@ -858,6 +913,47 @@
 						stroke-linecap="round"
 						stroke-linejoin="round" />
 				</svg>
+			</button>
+		</div>
+		<div id="pad-tools">
+			<button
+				id="pad-btn"
+				type="button"
+				aria-pressed="false"
+				title="Touch points at the spot; Pad moves a pointer like a trackpad">
+				Touch
+			</button>
+			<button
+				class="mod"
+				data-mod="cmd"
+				type="button"
+				aria-pressed="false"
+				aria-label="Command">
+				⌘
+			</button>
+			<button
+				class="mod"
+				data-mod="opt"
+				type="button"
+				aria-pressed="false"
+				aria-label="Option">
+				⌥
+			</button>
+			<button
+				class="mod"
+				data-mod="ctrl"
+				type="button"
+				aria-pressed="false"
+				aria-label="Control">
+				⌃
+			</button>
+			<button
+				class="mod"
+				data-mod="shift"
+				type="button"
+				aria-pressed="false"
+				aria-label="Shift">
+				⇧
 			</button>
 		</div>
 		<div id="files" role="dialog" aria-label="Files">

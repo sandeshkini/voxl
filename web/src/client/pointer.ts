@@ -7,7 +7,16 @@ import type { Zoom } from './zoom';
 /** DOM button -> X button (left, middle, right, back, forward). */
 const BUTTONS = [1, 2, 3, 8, 9];
 
-export function setupPointer(app: App, zoom: Zoom, onInteract: () => void) {
+/** Pointer speed in trackpad mode: remote pixels per finger pixel, times the
+ * desktop-to-screen scale (a fingertip crosses the screen in about one swipe). */
+const TRACKPAD_GAIN = 1.6;
+
+export function setupPointer(
+	app: App,
+	zoom: Zoom,
+	onInteract: () => void,
+	pad: { on: boolean; show(x: number, y: number): void }
+) {
 	const { surface, send } = app;
 
 	function toDesk(p: { clientX: number; clientY: number }): [number, number] {
@@ -20,13 +29,34 @@ export function setupPointer(app: App, zoom: Zoom, onInteract: () => void) {
 		];
 	}
 	let lastMove = '';
-	function move(p: { clientX: number; clientY: number }, force = false) {
-		if (!app.desk.w) return;
-		const s = cmd.move(...toDesk(p));
+	/** Where the remote pointer is, in desktop pixels (trackpad mode moves it from here). */
+	const cur = { x: 0, y: 0 };
+	function moveDesk(x: number, y: number, force = false) {
+		cur.x = x;
+		cur.y = y;
+		const s = cmd.move(x, y);
 		if (s !== lastMove || force) {
 			lastMove = s;
 			send(s);
 		}
+		if (pad.on) pad.show(x / app.desk.w, y / app.desk.h);
+	}
+	function move(p: { clientX: number; clientY: number }, force = false) {
+		if (!app.desk.w) return;
+		moveDesk(...toDesk(p), force);
+	}
+	function moveBy(dx: number, dy: number) {
+		if (!app.desk.w) return;
+		if (!cur.x && !cur.y) {
+			cur.x = app.desk.w / 2;
+			cur.y = app.desk.h / 2;
+		}
+		const k = deskPerPx() * TRACKPAD_GAIN;
+		moveDesk(
+			Math.max(0, Math.min(app.desk.w - 1, Math.round(cur.x + dx * k))),
+			Math.max(0, Math.min(app.desk.h - 1, Math.round(cur.y + dy * k))),
+			true
+		);
 	}
 
 	// Scroll is sent in desktop pixels, batched per frame; the server turns it into
@@ -55,6 +85,8 @@ export function setupPointer(app: App, zoom: Zoom, onInteract: () => void) {
 		queueScroll,
 		deskPerPx,
 		zoom,
+		trackpad: () => pad.on,
+		moveBy,
 	});
 
 	surface.addEventListener('pointermove', (e) => {

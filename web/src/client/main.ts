@@ -12,6 +12,7 @@ import { setupKeyboard } from './keyboard';
 import { createMic } from './mic';
 import { setupPointer } from './pointer';
 import { createResize } from './resize';
+import { createTouchTools } from './touchtools';
 import { setupToolbar } from './toolbar';
 import { createVideo } from './video';
 import { createZoom } from './zoom';
@@ -100,8 +101,8 @@ function main() {
 		audio.start();
 		clipboard.flush();
 	};
-	setupPointer(app, zoom, onInteract);
-	setupKeyboard(app, clipboard, onInteract);
+	const kb = setupKeyboard(app, clipboard, onInteract);
+	setupPointer(app, zoom, onInteract, createTouchTools(app, kb.modifierKeysym));
 	const updateDisplays = setupToolbar(app, video.layout);
 	const files = createFiles(app);
 	const mic = createMic(app);

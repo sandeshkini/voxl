@@ -218,5 +218,5 @@ export function setupKeyboard(
 	surface.addEventListener('focus', () => kbd.focus({ preventScroll: true }));
 	if (!app.inIframe) kbd.focus({ preventScroll: true });
 
-	return { releaseAll };
+	return { releaseAll, modifierKeysym, tap };
 }

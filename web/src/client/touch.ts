@@ -19,6 +19,10 @@ interface Hooks {
 	queueScroll(dx: number, dy: number): void;
 	deskPerPx(): number;
 	zoom: Zoom;
+	/** Trackpad mode: one finger moves the pointer relatively instead of pointing at the spot. */
+	trackpad(): boolean;
+	/** Move the remote pointer by a finger movement in CSS pixels. */
+	moveBy(dx: number, dy: number): void;
 }
 
 export function createTouch(app: App, hooks: Hooks) {
@@ -33,6 +37,10 @@ export function createTouch(app: App, hooks: Hooks) {
 	let startMid: [number, number] = [0, 0];
 	let startSpread = 0;
 	let lastTap = { x: 0, y: 0, t: -Infinity };
+	/** The gesture began in trackpad mode; `held`: its left button is down (a long press drags). */
+	let pad = false,
+		held = false,
+		twoAt = 0;
 	const mid = (): [number, number] => {
 		let x = 0,
 			y = 0;
@@ -67,19 +75,30 @@ export function createTouch(app: App, hooks: Hooks) {
 		pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		if (pts.size === 1) {
 			mode = 'pending';
+			pad = hooks.trackpad();
+			held = false;
 			start = { x: e.clientX, y: e.clientY };
 			timer = setTimeout(() => {
 				if (mode !== 'pending') return;
-				hooks.moveTo(start.x, start.y);
-				click(3);
-				mode = 'done';
+				if (pad) {
+					// Trackpad: a long press holds the left button, so the next move drags.
+					send(cmd.button(1, true));
+					held = true;
+					mode = 'drag';
+				} else {
+					hooks.moveTo(start.x, start.y);
+					click(3);
+					mode = 'done';
+				}
 				navigator.vibrate?.(10);
 			}, LONG_PRESS);
 		} else {
 			if (pts.size === 2) {
 				clearTimeout(timer);
-				if (mode === 'drag') send(cmd.button(1, false));
+				if (mode === 'drag' && (!pad || held)) send(cmd.button(1, false));
+				held = false;
 				mode = 'two';
+				twoAt = performance.now();
 			}
 			rebase();
 		}
@@ -87,15 +106,22 @@ export function createTouch(app: App, hooks: Hooks) {
 	function move(e: PointerEvent) {
 		const p = pts.get(e.pointerId);
 		if (!p) return;
+		const dx = e.clientX - p.x,
+			dy = e.clientY - p.y;
 		p.x = e.clientX;
 		p.y = e.clientY;
 		if (mode === 'pending' && Math.hypot(p.x - start.x, p.y - start.y) > SLOP) {
 			clearTimeout(timer);
 			mode = 'drag';
-			hooks.moveTo(start.x, start.y);
-			send(cmd.button(1, true));
+			if (pad) hooks.moveBy(p.x - start.x, p.y - start.y);
+			else {
+				hooks.moveTo(start.x, start.y);
+				send(cmd.button(1, true));
+			}
+		} else if (mode === 'drag') {
+			if (pad) hooks.moveBy(dx, dy);
+			else hooks.moveTo(p.x, p.y);
 		}
-		if (mode === 'drag') hooks.moveTo(p.x, p.y);
 		if (pts.size < 2) return;
 		if (mode === 'two') {
 			// A pinch changes the fingers' gap faster than it moves their centroid
@@ -122,6 +148,12 @@ export function createTouch(app: App, hooks: Hooks) {
 		if (mode === 'pending') {
 			clearTimeout(timer);
 			const now = performance.now();
+			if (pad) {
+				click(1);
+				mode = 'done';
+				if (pts.size === 0) mode = null;
+				return;
+			}
 			const at =
 				now - lastTap.t < MULTI_TAP_MS &&
 				Math.hypot(start.x - lastTap.x, start.y - lastTap.y) < MULTI_TAP_PX
@@ -132,7 +164,11 @@ export function createTouch(app: App, hooks: Hooks) {
 			click(1);
 			mode = 'done';
 		} else if (mode === 'drag') {
-			send(cmd.button(1, false));
+			if (!pad || held) send(cmd.button(1, false));
+			held = false;
+			mode = 'done';
+		} else if (mode === 'two' && pad && performance.now() - twoAt < 300) {
+			click(3); // trackpad: a two-finger tap is a right click
 			mode = 'done';
 		} else if (mode === 'two' || mode === 'scroll' || mode === 'pinch') {
 			if (pts.size < 2) mode = 'done';
@@ -142,7 +178,8 @@ export function createTouch(app: App, hooks: Hooks) {
 	}
 	function cancel(e: PointerEvent) {
 		clearTimeout(timer);
-		if (mode === 'drag') send(cmd.button(1, false));
+		if (mode === 'drag' && (!pad || held)) send(cmd.button(1, false));
+		held = false;
 		pts.delete(e.pointerId);
 		mode = pts.size ? 'done' : null;
 	}
