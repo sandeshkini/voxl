@@ -102,7 +102,12 @@ function main() {
 		clipboard.flush();
 	};
 	const kb = setupKeyboard(app, clipboard, onInteract);
-	setupPointer(app, zoom, onInteract, createTouchTools(app, kb.modifierKeysym));
+	setupPointer(
+		app,
+		zoom,
+		onInteract,
+		createTouchTools(app, kb, clipboard, zoom)
+	);
 	const updateDisplays = setupToolbar(app, video.layout);
 	const files = createFiles(app);
 	const mic = createMic(app);

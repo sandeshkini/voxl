@@ -4,7 +4,7 @@
 		<meta charset="utf-8" />
 		<meta
 			name="viewport"
-			content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+			content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
 		<!-- The server fills in the title (index_html in src/server.rs). -->
 		<meta name="application-name" content="{{title}}" />
 		<meta name="apple-mobile-web-app-title" content="{{title}}" />
@@ -76,6 +76,7 @@
 				align-items: center;
 				justify-content: center;
 				-webkit-font-smoothing: antialiased;
+				font-family: var(--font);
 			}
 			#surface {
 				position: relative;
@@ -160,40 +161,93 @@
 			}
 			#tools.touch {
 				top: auto;
-				bottom: 12px;
+				bottom: calc(12px + env(safe-area-inset-bottom));
+				right: calc(8px + env(safe-area-inset-right));
 			}
 
-			/* Touch extras: trackpad mode and latched modifiers, above the toolbar. */
-			#pad-tools {
+			/* Touch extras above the toolbar: trackpad mode, latched modifiers, more keys, zoom reset. Solid
+			   surface and full-strength text so they read on any picture; clear of the home bar and the
+			   notch's side insets. A page that embeds this one can set the colour variables above and
+			   --font on :root (the cos panel does). */
+			#pad-tools,
+			#key-row {
 				position: fixed;
-				right: 8px;
-				bottom: 64px;
+				right: calc(8px + env(safe-area-inset-right));
 				z-index: 3;
 				display: none;
-				gap: 2px;
-				padding: 2px;
-				background: color-mix(in srgb, var(--surface-raised) 90%, transparent);
-				border: 1.5px solid var(--border-default);
-				border-radius: 12px;
-				backdrop-filter: blur(30px);
-				-webkit-backdrop-filter: blur(30px);
+				flex-wrap: wrap;
+				justify-content: flex-end;
+				gap: 4px;
+				max-width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
+				padding: 4px;
+				background: var(--surface-raised);
+				border: 1px solid var(--border-default);
+				border-radius: 14px;
+				box-shadow: var(--shadow-lg);
+			}
+			#pad-tools {
+				bottom: calc(68px + env(safe-area-inset-bottom));
+			}
+			#key-row {
+				bottom: calc(124px + env(safe-area-inset-bottom));
 			}
 			#tools.touch:not(.read-only) ~ #pad-tools {
 				display: flex;
 			}
-			#pad-tools button {
-				min-width: 40px;
-				height: 40px;
-				padding: 0 8px;
-				border: 0;
+			#tools.touch:not(.read-only) ~ #key-row.open {
+				display: flex;
+			}
+			/* Zooming works in view-only too: just its reset button. */
+			#tools.touch.read-only ~ #pad-tools:has(#zoom-reset:not([hidden])) {
+				display: flex;
+			}
+			#tools.touch.read-only ~ #pad-tools > :not(#zoom-reset) {
+				display: none;
+			}
+			#pad-tools button,
+			#key-row button {
+				min-width: 44px;
+				height: 44px;
+				padding: 0 12px;
+				border: 1px solid transparent;
 				border-radius: 10px;
-				background: transparent;
-				font-family: inherit;
-				font-size: 16px;
+				background: var(--fill-tertiary);
+				color: var(--text-title);
+				font: 600 16px/1 var(--font);
+				-webkit-tap-highlight-color: transparent;
+			}
+			#pad-tools button:active,
+			#key-row button:active {
+				background: var(--fill-tertiary-pressed);
 			}
 			#pad-tools button.on {
-				background: var(--border-default);
-				font-weight: 600;
+				background: var(--accent-subtle);
+				border-color: var(--accent);
+				color: var(--accent-ink, var(--accent));
+			}
+			/* Where the zoomed view sits in the whole desktop. */
+			#minimap {
+				position: fixed;
+				left: calc(8px + env(safe-area-inset-left));
+				top: calc(8px + env(safe-area-inset-top));
+				z-index: 3;
+				width: 72px;
+				aspect-ratio: 16 / 9;
+				background: var(--surface-raised);
+				border: 1px solid var(--border-default);
+				border-radius: 6px;
+				pointer-events: none;
+				opacity: 0.9;
+			}
+			#minimap[hidden] {
+				display: none;
+			}
+			#minimap i {
+				position: absolute;
+				border: 1.5px solid var(--accent);
+				background: var(--accent-subtle);
+				border-radius: 2px;
+				box-sizing: border-box;
 			}
 			#pad-cursor {
 				position: absolute;
@@ -955,7 +1009,28 @@
 				aria-label="Shift">
 				⇧
 			</button>
+			<button
+				id="keys-btn"
+				type="button"
+				aria-pressed="false"
+				aria-label="More keys: Esc, Tab, arrows, Return, Paste">
+				Keys
+			</button>
+			<button id="zoom-reset" type="button" hidden aria-label="Show the whole screen">
+				1×
+			</button>
 		</div>
+		<div id="key-row">
+			<button type="button" data-key="esc">Esc</button>
+			<button type="button" data-key="tab">Tab</button>
+			<button type="button" data-key="left" aria-label="Left">←</button>
+			<button type="button" data-key="up" aria-label="Up">↑</button>
+			<button type="button" data-key="down" aria-label="Down">↓</button>
+			<button type="button" data-key="right" aria-label="Right">→</button>
+			<button type="button" data-key="enter" aria-label="Return">⏎</button>
+			<button type="button" data-key="paste">Paste</button>
+		</div>
+		<div id="minimap" hidden aria-hidden="true"><i></i></div>
 		<div id="files" role="dialog" aria-label="Files">
 			<header>
 				<h2>Files</h2>

@@ -4,8 +4,23 @@
 import { cmd } from '../protocol';
 import type { App } from './app';
 import { el } from './app';
+import type { Clipboard } from './clipboard';
+import type { Zoom } from './zoom';
 
 type ModifierKeysym = (code: string) => number | undefined;
+type Keys = { modifierKeysym: ModifierKeysym; tap: (keysym: number) => void };
+
+/** The keys a soft keyboard lacks: the tray's second row. */
+const KEYSYMS: Record<string, number> = {
+	esc: 0xff1b,
+	tab: 0xff09,
+	left: 0xff51,
+	up: 0xff52,
+	right: 0xff53,
+	down: 0xff54,
+	enter: 0xff0d,
+};
+const KEY_V = 0x76;
 
 const MODS: Record<string, string> = {
 	cmd: 'MetaLeft',
@@ -16,7 +31,12 @@ const MODS: Record<string, string> = {
 const ALT_L = 0xffe9,
 	SHIFT_L = 0xffe1;
 
-export function createTouchTools(app: App, modifierKeysym: ModifierKeysym) {
+export function createTouchTools(
+	app: App,
+	{ modifierKeysym, tap }: Keys,
+	clipboard: Clipboard,
+	zoom: Zoom
+) {
 	const modeBtn = el<HTMLButtonElement>('pad-btn');
 	const cursor = el('pad-cursor');
 	const latched = new Map<string, number>();
@@ -95,6 +115,71 @@ export function createTouchTools(app: App, modifierKeysym: ModifierKeysym) {
 			)
 				release();
 		});
+
+	// The tray's second row: Esc, Tab, arrows, Return and Paste.
+	const keysBtn = el<HTMLButtonElement>('keys-btn');
+	const keyRow = el('key-row');
+	keysBtn.addEventListener('pointerdown', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+	});
+	keysBtn.addEventListener('click', () => {
+		const open = keyRow.classList.toggle('open');
+		keysBtn.classList.toggle('on', open);
+		keysBtn.setAttribute('aria-pressed', String(open));
+	});
+	for (const b of keyRow.querySelectorAll<HTMLElement>('button')) {
+		b.addEventListener('pointerdown', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+		});
+		b.addEventListener('click', () => {
+			const name = b.dataset.key!;
+			if (name === 'paste') void paste();
+			else tap(KEYSYMS[name]);
+			// A latched modifier applies to this key: arrows with ⇧, Tab with ⌃.
+			if (latched.size) setTimeout(release, 30);
+		});
+	}
+	/** This device's clipboard to the machine, then the machine's paste shortcut (the page cannot read the
+	 * clipboard except in a tap like this one). */
+	async function paste() {
+		try {
+			const text = await navigator.clipboard.readText();
+			if (!text) return;
+			clipboard.noteLocal(text);
+			app.send(cmd.clipboard(text));
+			const m = modifierKeysym(app.remoteMac ? 'MetaLeft' : 'ControlLeft');
+			if (m === undefined) return;
+			// The machine's clipboard is set before the shortcut lands.
+			setTimeout(() => {
+				app.send(cmd.key(m, true));
+				tap(KEY_V);
+				app.send(cmd.key(m, false));
+			}, 120);
+		} catch {
+			// Not allowed: the browser did not let this page read its clipboard.
+		}
+	}
+
+	// Zoomed in: a "1×" button and a mini-map of where the view is.
+	const resetBtn = el<HTMLButtonElement>('zoom-reset');
+	const map = el('minimap');
+	const rect = map.firstElementChild as HTMLElement;
+	resetBtn.addEventListener('pointerdown', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+	});
+	resetBtn.addEventListener('click', () => zoom.reset());
+	zoom.onChange((z, x, y, w, h) => {
+		const on = z > 1.01;
+		resetBtn.hidden = map.hidden = !on;
+		rect.style.left = `${x * 100}%`;
+		rect.style.top = `${y * 100}%`;
+		rect.style.width = `${w * 100}%`;
+		rect.style.height = `${h * 100}%`;
+	});
+
 	// What the page does to release everything (tab hidden, window blur) frees them too.
 	window.addEventListener('blur', release);
 	return pad;

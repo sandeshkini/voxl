@@ -22,6 +22,9 @@ export function createZoom(app: App) {
 		ty = 0;
 	/** The surface's untransformed box, in client pixels. */
 	let box = { x: 0, y: 0, w: 0, h: 0 };
+	/** Told after every change of the view: the zoom and the visible part of the desktop, as fractions. */
+	let onChange: (z: number, x: number, y: number, w: number, h: number) => void =
+		() => {};
 	/** The view and the fingers' centroid and spread when the pinch began. */
 	let from = { z: 1, tx: 0, ty: 0, x: 0, y: 0, spread: 1 };
 
@@ -41,14 +44,32 @@ export function createZoom(app: App) {
 		if (z === 1) {
 			tx = ty = 0;
 			surface.style.transform = '';
+			onChange(1, 0, 0, 1, 1);
 			return;
 		}
 		tx = place(ntx, box.x, box.w * z, window.innerWidth);
 		ty = place(nty, box.y, box.h * z, window.innerHeight);
 		surface.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+		const w = box.w * z,
+			h = box.h * z;
+		onChange(
+			z,
+			Math.max(0, -(box.x + tx) / w),
+			Math.max(0, -(box.y + ty) / h),
+			Math.min(1, window.innerWidth / w),
+			Math.min(1, window.innerHeight / h)
+		);
 	}
 
 	return {
+		/** Listen for view changes (the mini-map). */
+		onChange(f: typeof onChange) {
+			onChange = f;
+		},
+		/** Back to the whole desktop. */
+		reset() {
+			set(1, 0, 0);
+		},
 		/** Start a pinch with the fingers' centroid at (x, y), `spread` apart. */
 		begin(x: number, y: number, spread: number) {
 			measure();
