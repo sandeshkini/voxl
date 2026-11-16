@@ -22,4 +22,11 @@ interface Navigator {
 interface Window {
 	fps: number;
 	voxlStats: unknown;
+	/** For a page that frames voxl and draws its own controls (main.ts). */
+	voxlEmbed: {
+		send(command: string): void;
+		setClipboard(text: string): void;
+		interact(): void;
+		hello: Record<string, unknown> | null;
+	};
 }

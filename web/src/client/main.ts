@@ -109,6 +109,19 @@ function main() {
 		createTouchTools(app, kb, clipboard, zoom)
 	);
 	const updateDisplays = setupToolbar(app, video.layout);
+	// A page that frames voxl (same origin) and draws its own touch controls over it, as cos's phone viewer
+	// does, drives it from here: the commands of protocol.ts on this page's socket, the clipboard (so the
+	// remote's echo of it isn't copied back), the user-gesture hook (audio, clipboard writes) and the
+	// server's last hello (the desktop's size, its OS, read-only, the displays).
+	window.voxlEmbed = {
+		send: (d) => app.send(d),
+		setClipboard: (text) => {
+			clipboard.noteLocal(text);
+			app.send(cmd.clipboard(text));
+		},
+		interact: onInteract,
+		hello: null,
+	};
 	const files = createFiles(app);
 	const mic = createMic(app);
 	const resize = createResize(app);
@@ -146,6 +159,7 @@ function main() {
 				video.present(m.parts);
 				break;
 			case 'hello':
+				window.voxlEmbed.hello = m as unknown as Record<string, unknown>;
 				app.desk.w = m.w;
 				app.desk.h = m.h;
 				app.remoteMac = m.os === 'macos';
@@ -162,6 +176,7 @@ function main() {
 			case 'status':
 				if (m.s === 'closed') {
 					app.desk.w = 0;
+					window.voxlEmbed.hello = null;
 					mic.stop();
 					statusEl.style.display = '';
 					statusEl.textContent = 'Reconnecting…';
