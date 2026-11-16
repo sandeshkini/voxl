@@ -1,12 +1,18 @@
 // Touch: tap = click, drag = left-drag, long press = right click, pinch = zoom the
 // view in or out, two fingers = scroll. The content follows the fingers: two fingers
 // move a zoomed-in view, and scroll the desktop once the view reaches its edge.
+// Pointer mode (the phone's default): the finger moves a pointer like a trackpad; tap clicks where
+// it is, two-finger tap right-clicks, hold still then move drags, two fingers scroll, pinch zooms.
 import { cmd } from '../protocol';
 import type { App } from './app';
 import type { Zoom } from './zoom';
 
 const SLOP = 10;
 const LONG_PRESS = 550;
+/** Pointer mode: a still finger this long holds the button for a drag (the old cos viewer's 450 ms). */
+const PAD_HOLD = 450;
+/** Pointer mode: a finger that has travelled no more than this is still (a tap or a hold). */
+const STILL = 3;
 /** A tap this soon (GTK's and Qt's double-click time) and this close (CSS px) after
  * the last one clicks the same spot, so double-taps double-click even though the
  * finger lands a little off. */
@@ -21,8 +27,8 @@ interface Hooks {
 	zoom: Zoom;
 	/** Trackpad mode: one finger moves the pointer relatively instead of pointing at the spot. */
 	trackpad(): boolean;
-	/** Move the remote pointer by a finger movement in CSS pixels. */
-	moveBy(dx: number, dy: number): void;
+	/** Move the remote pointer by a finger movement in CSS pixels, `dt` ms after the last one. */
+	moveBy(dx: number, dy: number, dt: number): void;
 }
 
 export function createTouch(app: App, hooks: Hooks) {
@@ -32,6 +38,11 @@ export function createTouch(app: App, hooks: Hooks) {
 	let mode: 'pending' | 'drag' | 'two' | 'scroll' | 'pinch' | 'done' | null =
 		null;
 	let start = { x: 0, y: 0 };
+	/** When the finger last moved (pointer mode's speed: quick flicks go further). */
+	let lastT = 0;
+	/** How far the finger has travelled (pointer mode: a finger that has moved isn't a hold). */
+	let travel = 0;
+	let downT = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let lastMid: [number, number] = [0, 0];
 	let startMid: [number, number] = [0, 0];
@@ -76,22 +87,33 @@ export function createTouch(app: App, hooks: Hooks) {
 		if (pts.size === 1) {
 			mode = 'pending';
 			pad = hooks.trackpad();
+			// Put the machine's pointer where the drawn one is (a fresh connection, or the mouse moved there),
+			// so a tap or hold acts at the arrow the user sees.
+			if (pad) hooks.moveBy(0, 0, 16);
 			held = false;
 			start = { x: e.clientX, y: e.clientY };
-			timer = setTimeout(() => {
-				if (mode !== 'pending') return;
-				if (pad) {
-					// Trackpad: a long press holds the left button, so the next move drags.
-					send(cmd.button(1, true));
-					held = true;
-					mode = 'drag';
-				} else {
-					hooks.moveTo(start.x, start.y);
-					click(3);
-					mode = 'done';
-				}
-				navigator.vibrate?.(10);
-			}, LONG_PRESS);
+			lastT = performance.now();
+			travel = 0;
+			downT = performance.now();
+			timer = setTimeout(
+				() => {
+					if (mode !== 'pending') return;
+					// Pointer mode: only a finger held still holds the button; a slow nudge keeps moving.
+					if (pad && travel > STILL) return;
+					if (pad) {
+						// Trackpad: a long press holds the left button, so the next move drags.
+						send(cmd.button(1, true));
+						held = true;
+						mode = 'drag';
+					} else {
+						hooks.moveTo(start.x, start.y);
+						click(3);
+						mode = 'done';
+					}
+					navigator.vibrate?.(10);
+				},
+				pad ? PAD_HOLD : LONG_PRESS
+			);
 		} else {
 			if (pts.size === 2) {
 				clearTimeout(timer);
@@ -110,18 +132,27 @@ export function createTouch(app: App, hooks: Hooks) {
 			dy = e.clientY - p.y;
 		p.x = e.clientX;
 		p.y = e.clientY;
-		if (mode === 'pending' && Math.hypot(p.x - start.x, p.y - start.y) > SLOP) {
+		if (pad && pts.size === 1 && (mode === 'pending' || mode === 'drag')) {
+			// Pointer mode: the pointer follows every bit of the finger (no dead zone), like a trackpad.
+			const now = performance.now();
+			hooks.moveBy(dx, dy, now - lastT);
+			lastT = now;
+			travel += Math.hypot(dx, dy);
+			// Like the old cos viewer: any real travel (8 px of path, not just distance from the start) makes it a
+			// move, so a slow nudge never turns into a drag.
+			if (mode === 'pending' && travel > 8) {
+				clearTimeout(timer);
+				mode = 'drag';
+			}
+		} else if (
+			mode === 'pending' &&
+			Math.hypot(p.x - start.x, p.y - start.y) > SLOP
+		) {
 			clearTimeout(timer);
 			mode = 'drag';
-			if (pad) hooks.moveBy(p.x - start.x, p.y - start.y);
-			else {
-				hooks.moveTo(start.x, start.y);
-				send(cmd.button(1, true));
-			}
-		} else if (mode === 'drag') {
-			if (pad) hooks.moveBy(dx, dy);
-			else hooks.moveTo(p.x, p.y);
-		}
+			hooks.moveTo(start.x, start.y);
+			send(cmd.button(1, true));
+		} else if (mode === 'drag' && !pad) hooks.moveTo(p.x, p.y);
 		if (pts.size < 2) return;
 		if (mode === 'two') {
 			// A pinch changes the fingers' gap faster than it moves their centroid
@@ -138,7 +169,11 @@ export function createTouch(app: App, hooks: Hooks) {
 		else if (mode === 'scroll') {
 			const m = mid(),
 				k = hooks.deskPerPx();
-			const [rx, ry] = hooks.zoom.pan(m[0] - lastMid[0], m[1] - lastMid[1]);
+			// Pointer mode scrolls the machine (the view follows the pointer by itself); Touch moves a
+			// zoomed-in view first and scrolls once it reaches the edge.
+			const [rx, ry] = pad
+				? [m[0] - lastMid[0], m[1] - lastMid[1]]
+				: hooks.zoom.pan(m[0] - lastMid[0], m[1] - lastMid[1]);
 			hooks.queueScroll(-rx * k, -ry * k);
 			lastMid = m;
 		}
@@ -149,7 +184,9 @@ export function createTouch(app: App, hooks: Hooks) {
 			clearTimeout(timer);
 			const now = performance.now();
 			if (pad) {
-				click(1);
+				// A tap: a still finger, or a quick one with a little wobble (the old viewer's 300 ms). A slow
+				// nudge that ends in place is only a move.
+				if (travel <= STILL || now - downT < 300) click(1);
 				mode = 'done';
 				if (pts.size === 0) mode = null;
 				return;

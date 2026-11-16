@@ -23,8 +23,13 @@ export function createZoom(app: App) {
 	/** The surface's untransformed box, in client pixels. */
 	let box = { x: 0, y: 0, w: 0, h: 0 };
 	/** Told after every change of the view: the zoom and the visible part of the desktop, as fractions. */
-	let onChange: (z: number, x: number, y: number, w: number, h: number) => void =
-		() => {};
+	let onChange: (
+		z: number,
+		x: number,
+		y: number,
+		w: number,
+		h: number
+	) => void = () => {};
 	/** The view and the fingers' centroid and spread when the pinch began. */
 	let from = { z: 1, tx: 0, ty: 0, x: 0, y: 0, spread: 1 };
 
@@ -90,6 +95,17 @@ export function createZoom(app: App) {
 				oy = ty;
 			set(z, tx + dx, ty + dy);
 			return [dx - (tx - ox), dy - (ty - oy)];
+		},
+		/** Pointer mode: pan a zoomed-in view so a point (client px) stays clear of the window's edges. */
+		follow(x: number, y: number, edge = 0.15) {
+			if (z === 1) return;
+			const W = window.innerWidth,
+				H = window.innerHeight,
+				mx = W * edge,
+				my = H * edge;
+			const dx = x < mx ? mx - x : x > W - mx ? W - mx - x : 0;
+			const dy = y < my ? my - y : y > H - my ? H - my - y : 0;
+			if (dx || dy) set(z, tx + dx, ty + dy);
 		},
 		/** Keep the view inside the window after the desktop is laid out again. */
 		fit() {
