@@ -215,8 +215,16 @@ export function setupKeyboard(
 		kbd.value = '';
 	});
 	window.addEventListener('blur', releaseAll);
-	surface.addEventListener('focus', () => kbd.focus({ preventScroll: true }));
-	if (!app.inIframe) kbd.focus({ preventScroll: true });
+	// On a phone the text box brings up the on-screen keyboard, so a tap on the picture keeps it up only
+	// when it is already open; the Keys button opens it.
+	const touchOnly =
+		matchMedia('(pointer: coarse)').matches &&
+		!matchMedia('(any-pointer: fine)').matches;
+	surface.addEventListener('focus', (e) => {
+		if (!touchOnly || e.relatedTarget === kbd)
+			kbd.focus({ preventScroll: true });
+	});
+	if (!app.inIframe && !touchOnly) kbd.focus({ preventScroll: true });
 
 	return { releaseAll, modifierKeysym, tap };
 }

@@ -7,9 +7,10 @@ import type { Zoom } from './zoom';
 /** DOM button -> X button (left, middle, right, back, forward). */
 const BUTTONS = [1, 2, 3, 8, 9];
 
-/** Pointer speed in trackpad mode: remote pixels per finger pixel, times the
- * desktop-to-screen scale (a fingertip crosses the screen in about one swipe). */
-const TRACKPAD_GAIN = 1.6;
+/** Pointer mode's speed: a slow finger moves the pointer as far as it moves over the picture (precise), a
+ * quick flick up to three times as far, like a laptop trackpad (the old cos viewer's curve). */
+const padGain = (dx: number, dy: number, dt: number) =>
+	1 + Math.min(2, (Math.hypot(dx, dy) / Math.max(dt, 1)) * 1.5);
 
 export function setupPointer(
 	app: App,
@@ -34,7 +35,8 @@ export function setupPointer(
 	function moveDesk(x: number, y: number, force = false) {
 		cur.x = x;
 		cur.y = y;
-		const s = cmd.move(x, y);
+		// Pointer mode keeps the fraction, so slow finger moves add up instead of rounding away.
+		const s = cmd.move(Math.round(x), Math.round(y));
 		if (s !== lastMove || force) {
 			lastMove = s;
 			send(s);
@@ -45,17 +47,23 @@ export function setupPointer(
 		if (!app.desk.w) return;
 		moveDesk(...toDesk(p), force);
 	}
-	function moveBy(dx: number, dy: number) {
+	function moveBy(dx: number, dy: number, dt: number) {
 		if (!app.desk.w) return;
 		if (!cur.x && !cur.y) {
 			cur.x = app.desk.w / 2;
 			cur.y = app.desk.h / 2;
 		}
-		const k = deskPerPx() * TRACKPAD_GAIN;
+		const k = deskPerPx() * padGain(dx, dy, dt);
 		moveDesk(
-			Math.max(0, Math.min(app.desk.w - 1, Math.round(cur.x + dx * k))),
-			Math.max(0, Math.min(app.desk.h - 1, Math.round(cur.y + dy * k))),
+			Math.max(0, Math.min(app.desk.w - 1, cur.x + dx * k)),
+			Math.max(0, Math.min(app.desk.h - 1, cur.y + dy * k)),
 			true
+		);
+		// Zoomed in, the view follows the pointer so it never leaves the screen.
+		const r = surface.getBoundingClientRect();
+		zoom.follow(
+			r.left + (cur.x / app.desk.w) * r.width,
+			r.top + (cur.y / app.desk.h) * r.height
 		);
 	}
 

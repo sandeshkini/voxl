@@ -21,6 +21,7 @@ const KEYSYMS: Record<string, number> = {
 	enter: 0xff0d,
 };
 const KEY_V = 0x76;
+const PAD_KEY = 'voxl-touch-mode';
 
 const MODS: Record<string, string> = {
 	cmd: 'MetaLeft',
@@ -50,17 +51,32 @@ export function createTouchTools(
 	};
 	let shown = false;
 
-	modeBtn.addEventListener('click', () => {
-		pad.on = !pad.on;
-		modeBtn.classList.toggle('on', pad.on);
-		modeBtn.textContent = pad.on ? 'Pad' : 'Touch';
-		modeBtn.setAttribute('aria-pressed', String(pad.on));
-		cursor.hidden = !pad.on;
-		if (pad.on && !shown) {
+	/** Pointer (trackpad) or Touch: Pointer is the default on a phone; the choice is remembered. */
+	function setPad(on: boolean) {
+		pad.on = on;
+		modeBtn.classList.toggle('on', on);
+		modeBtn.textContent = on ? 'Pointer' : 'Touch';
+		modeBtn.setAttribute('aria-pressed', String(on));
+		// An SVG has no `hidden` property, only the attribute.
+		cursor.toggleAttribute('hidden', !on);
+		if (on && !shown) {
 			shown = true;
 			pad.show(0.5, 0.5);
 		}
+		try {
+			localStorage.setItem(PAD_KEY, on ? 'pointer' : 'touch');
+		} catch {}
+	}
+	let saved: string | null = null;
+	try {
+		saved = localStorage.getItem(PAD_KEY);
+	} catch {}
+	if (matchMedia('(pointer: coarse)').matches) setPad(saved !== 'touch');
+	modeBtn.addEventListener('pointerdown', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
 	});
+	modeBtn.addEventListener('click', () => setPad(!pad.on));
 
 	function keysym(name: string): number {
 		const code = MODS[name];
